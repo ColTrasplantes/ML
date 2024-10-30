@@ -1,0 +1,128 @@
+---
+title: "Random Forest Survival Analysis"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+# Load necessary libraries
+
+#install.packages("readxl")
+library(readxl)
+
+# Import the dataset
+transplant_database <- read_excel("transplant_database.xlsx")
+data <- transplant_database
+```
+
+```{r}
+# Summarize the dataset
+summary(data)
+
+```
+```{r}
+# Set seed for reproducibility
+set.seed(42)
+
+# Split the data into training and testing sets
+n <- nrow(data)
+train_indices <- sample(1:n, size = 0.7 * n)
+train_data <- data[train_indices, ]
+test_data <- data[-train_indices, ]
+```
+
+```{r}
+# Load necessary libraries
+#install.packages("randomForestSRC")
+library(randomForestSRC)
+
+# Train the RSF model
+rsf_model <- rfsrc(Surv(time_to_event, event_occurred) ~ age + bmi + diabetes + hypertension + 
+                   donor_age + cold_ischemia_time,
+                   data = train_data,
+                   ntree = 100,
+                   nodesize = 15,
+                   mtry = sqrt(ncol(train_data) - 2), # Number of variables to consider at
+                   nsplit = 10,
+                   importance = TRUE,
+                   seed = 42)
+
+print(rsf_model)
+```
+```{r warning=FALSE}
+# Load necessary libraries
+#install.packages("survival")
+library(survival)
+#install.packages("survminer")
+library(survminer)
+#install.packages("survcomp")
+library(survcomp)
+
+
+# Predictions on the test set
+pred <- predict(rsf_model, newdata = test_data)
+
+# Calculate the C-index
+c_index <- concordance.index(pred$predicted, test_data$time_to_event, test_data$event_occurred)
+print(paste("Índice C:", c_index$c.index))
+
+```
+
+```{r warning=FALSE}
+#install.packages("pec")
+library(pec)
+
+# Crear un objeto de predicción para el modelo
+rsf_pred <- predictSurvProb(rsf_model, newdata = test_data, times = seq(1, 60, by = 1))
+
+
+# Calcular el Brier Score
+brier_score <- pec(object = rsf_model, formula = Surv(time_to_event, event_occurred) ~ age + bmi + diabetes + hypertension + donor_age + cold_ischemia_time, 
+                   data = test_data, times = seq(1, 60, by = 1))
+print(brier_score)
+```
+```{r}
+ 
+ # Calculate the calibration curve
+ calibration_curve <- pec(object = rsf_model,
+                          formula = Surv(time_to_event, event_occurred) ~ age + bmi + diabetes + 
+                          hypertension + donor_age + cold_ischemia_time,
+                          data = test_data,
+                          times = seq(0, max(test_data$time_to_event), by = 1),
+                          splitMethod = "Boot632plus")
+ 
+ # Plot the calibration curve
+ plot(calibration_curve, xlab = "Predicted Probability", 
+                         ylab = "Observed Probability", main = "Calibration Curve")
+```
+
+
+```{r}
+# Variable importance
+importance_values <- rsf_model$importance
+importance_df <- data.frame(Feature = names(importance_values), Importance = importance_values)
+importance_df <- importance_df[order(-importance_df$Importance), ]
+print(importance_df)
+
+# Load necessary library
+#install.packages("ggplot2")
+library(ggplot2)
+
+
+# Create the bar plot
+ggplot(importance_df, aes(x = reorder(Feature, Importance), y = Importance)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  xlab("Variables") +
+  ylab("Importance") +
+  ggtitle("Variable Importance") +
+  theme_minimal()
+
+```
+
+
+```{r}
+
+```
+
